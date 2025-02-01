@@ -27,6 +27,12 @@ async def upload_file(file: UploadFile = File(..., description="Text file to ana
                 text_content = f.read()
             
             processor = TextProcessor()
+            
+            # Check for biblical references
+            has_biblical_refs = processor.biblical_detector.contains_references(text_content)
+            biblical_refs = processor.biblical_detector.find_references(text_content) if has_biblical_refs else []
+            
+            # Process text
             segments_result = await processor.segment_text(text_content)
             emotion_result = await processor.emotion_analyzer.analyze(text_content)
             
@@ -34,7 +40,14 @@ async def upload_file(file: UploadFile = File(..., description="Text file to ana
             result_file = NamedTemporaryFile(delete=False, suffix='_result.txt', mode='w', encoding='utf-8')
             result_file.write("Text Analysis Results\n")
             result_file.write("===================\n\n")
-            result_file.write("Original Segments:\n")
+            
+            if biblical_refs:
+                result_file.write("Biblical References Found:\n")
+                for ref in biblical_refs:
+                    result_file.write(f"- {ref['reference']}\n")
+                result_file.write("\n")
+            
+            result_file.write("Processed Segments:\n")
             for i, segment in enumerate(segments_result["segments"], 1):
                 result_file.write(f"\nSegment {i}:\n{segment}\n")
             
@@ -49,18 +62,23 @@ async def upload_file(file: UploadFile = File(..., description="Text file to ana
             
             result_file.write("\nToken Usage and Costs:\n")
             result_file.write("1. Embedding (Text Segmentation):\n")
-            result_file.write(f"   - Total Tokens: {segments_result['usage']['total_tokens']}\n")
-            result_file.write(f"   - Model: {segments_result['usage']['model']}\n")
-            result_file.write(f"   - Estimated Cost: ${segments_result['usage']['cost_estimate']}\n")
+            result_file.write(f"   - Total Tokens: {segments_result['usage']['embedding']['total_tokens']}\n")
+            result_file.write(f"   - Model: {segments_result['usage']['embedding']['model']}\n")
+            result_file.write(f"   - Estimated Cost: ${segments_result['usage']['embedding']['cost_estimate']}\n")
             
-            result_file.write("\n2. Chat Completion (Emotion Analysis):\n")
+            result_file.write("\n2. Text Improvement:\n")
+            result_file.write(f"   - Total Tokens: {segments_result['usage']['improvement']['total_tokens']}\n")
+            result_file.write(f"   - Model: {segments_result['usage']['improvement']['model']}\n")
+            result_file.write(f"   - Estimated Cost: ${segments_result['usage']['improvement']['cost_estimate']}\n")
+            
+            result_file.write("\n3. Emotion Analysis:\n")
             result_file.write(f"   - Prompt Tokens: {emotion_result['usage']['prompt_tokens']}\n")
             result_file.write(f"   - Completion Tokens: {emotion_result['usage']['completion_tokens']}\n")
             result_file.write(f"   - Total Tokens: {emotion_result['usage']['total_tokens']}\n")
             result_file.write(f"   - Model: {emotion_result['usage']['model']}\n")
             result_file.write(f"   - Estimated Cost: ${emotion_result['usage']['cost_estimate']}\n")
             
-            total_cost = segments_result['usage']['cost_estimate'] + emotion_result['usage']['cost_estimate']
+            total_cost = segments_result['usage']['total_cost_estimate'] + emotion_result['usage']['cost_estimate']
             result_file.write(f"\nTotal Estimated Cost: ${total_cost}")
             
             result_file.close()
