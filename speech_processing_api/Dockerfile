@@ -12,5 +12,5 @@ COPY .env .
 
 EXPOSE 8000
 
-# Start the application using Python directly
+# Run directly with Python module
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
