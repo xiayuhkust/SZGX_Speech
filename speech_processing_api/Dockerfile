@@ -12,5 +12,5 @@ COPY . .
 # Expose the port
 EXPOSE 8000
 
-# Run using Python module directly
-ENTRYPOINT ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run using explicit Python path
+CMD ["/usr/local/bin/python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
