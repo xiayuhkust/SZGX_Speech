@@ -26,9 +26,5 @@ EXPOSE 8000
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Create entrypoint script
-RUN echo '#!/bin/bash\ncd /app && exec uvicorn app.main:app --host 0.0.0.0 --port 8000' > /app/entrypoint.sh && \
-    chmod +x /app/entrypoint.sh
-
-# Start the application
-ENTRYPOINT ["/app/entrypoint.sh"]
+# Start the application using uvicorn directly
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
