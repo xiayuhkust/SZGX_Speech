@@ -1,4 +1,4 @@
-fastapi==0.115.8
+fastapi[standard]==0.115.8
 uvicorn==0.34.0
 python-dotenv==1.0.1
 openai==1.61.0
