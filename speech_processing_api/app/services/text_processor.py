@@ -30,7 +30,10 @@ class TextProcessor:
                 "segments": [text],
                 "usage": {
                     "total_tokens": self.token_usage["total_tokens"],
-                    "model": self.embedding_model
+                    "model": self.embedding_model,
+                    "text_length": len(text),
+                    "segment_count": 1,
+                    "cost_estimate": round(self.token_usage["total_tokens"] * 0.0001 / 1000, 6)
                 }
             }
             
@@ -73,7 +76,13 @@ class TextProcessor:
             "model": self.embedding_model
         }
         
+        total_tokens = total_embedding_usage["total_tokens"]
         return {
             "segments": unique_segments,
-            "usage": total_embedding_usage
+            "usage": {
+                **total_embedding_usage,
+                "text_length": len(text),
+                "segment_count": len(unique_segments),
+                "cost_estimate": round(total_tokens * 0.0001 / 1000, 6)
+            }
         }
