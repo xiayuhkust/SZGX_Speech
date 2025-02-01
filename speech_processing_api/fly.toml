@@ -20,3 +20,6 @@ primary_region = "hkg"
 
 [env]
   PORT = "8000"
+
+[processes]
+  web = "uvicorn app.main:app --host 0.0.0.0 --port 8000"
