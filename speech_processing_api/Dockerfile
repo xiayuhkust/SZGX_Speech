@@ -9,8 +9,12 @@ RUN pip install --no-cache-dir -r requirements.txt uvicorn
 # Copy application code
 COPY . .
 
+# Make start script executable
+COPY start.sh .
+RUN chmod +x start.sh
+
 # Expose the port
 EXPOSE 8000
 
-# Run using uvicorn directly
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run using start script
+CMD ["./start.sh"]
