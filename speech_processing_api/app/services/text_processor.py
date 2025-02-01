@@ -1,31 +1,38 @@
-from typing import List, Dict
-from app.core.settings import get_settings
+from typing import List, Dict, Any
 import numpy as np
 from openai import OpenAI
 from app.services.emotion_analyzer import EmotionAnalyzer
-
-settings = get_settings()
+from app.services.deduplication import DuplicationDetector
 
 class TextProcessor:
     def __init__(self):
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.embedding_model = "text-embedding-ada-002"
         self.chunk_size = 1000  # 每个文本块的最大字符数
         self.emotion_analyzer = EmotionAnalyzer()
+        self.token_usage = {"total_tokens": 0}
         
     async def get_embedding(self, text: str) -> List[float]:
-        """获取文本的embedding向量"""
-        response = self.client.embeddings.create(
+        client = OpenAI()
+        response = client.embeddings.create(
             model=self.embedding_model,
             input=text
         )
-        return response.data[0].embedding
+        self.token_usage["total_tokens"] += response.usage.total_tokens
+        return response.data[0].embedding if isinstance(response.data, list) and len(response.data) > 0 else []
         
-    async def segment_text(self, text: str) -> List[str]:
+    async def segment_text(self, text: str) -> Dict[str, Any]:
         """基于语义相似度的文本分段"""
         # 如果文本较短，直接返回
         if len(text) < self.chunk_size:
-            return [text]
+            # Get embedding for the single segment
+            _ = await self.get_embedding(text)
+            return {
+                "segments": [text],
+                "usage": {
+                    "total_tokens": self.token_usage["total_tokens"],
+                    "model": self.embedding_model
+                }
+            }
             
         # 将文本分成初始块
         chunks = [text[i:i+self.chunk_size] for i in range(0, len(text), self.chunk_size)]
@@ -60,4 +67,13 @@ class TextProcessor:
         dedup = DuplicationDetector()
         unique_segments = await dedup.find_duplicates(segments)
         
-        return unique_segments
+        # Combine token usage from segmentation and deduplication
+        total_embedding_usage = {
+            "total_tokens": self.token_usage["total_tokens"] + dedup.token_usage["total_tokens"],
+            "model": self.embedding_model
+        }
+        
+        return {
+            "segments": unique_segments,
+            "usage": total_embedding_usage
+        }

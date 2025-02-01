@@ -5,15 +5,17 @@ from app.core.config import settings
 
 class DuplicationDetector:
     def __init__(self):
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.embedding_model = "text-embedding-ada-002"
         self.similarity_threshold = 0.85
+        self.token_usage = {"total_tokens": 0}
 
     async def get_embedding(self, text: str) -> List[float]:
-        response = await self.client.embeddings.create(
+        client = OpenAI()
+        response = client.embeddings.create(
             model=self.embedding_model,
             input=text
         )
+        self.token_usage["total_tokens"] += response.usage.total_tokens
         return response.data[0].embedding
 
     async def find_duplicates(self, segments: List[str]) -> List[str]:
