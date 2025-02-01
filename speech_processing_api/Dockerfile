@@ -23,13 +23,13 @@ ENV PORT=8000
 
 EXPOSE 8000
 
-# Install only the required dependencies
-RUN pip install "uvicorn[standard]" && \
-    pip install "fastapi>=0.109.0" && \
-    pip install "python-multipart>=0.0.6"
+# Create and activate virtual environment
+RUN python -m venv /app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
+ENV VIRTUAL_ENV="/app/.venv"
 
-# Make start script executable
-RUN chmod +x /app/start.sh
+# Install only the required dependencies in the virtual environment
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Start the application using the start script
-CMD ["/bin/bash", "/app/start.sh"]
+# Start the application using uvicorn directly
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
