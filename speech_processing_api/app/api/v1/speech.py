@@ -11,14 +11,26 @@ class SpeechRequest(BaseModel):
 async def process_speech(request: SpeechRequest):
     try:
         processor = TextProcessor()
-        segments = await processor.segment_text(request.text)
-        emotion_analysis = await processor.emotion_analyzer.analyze(request.text)
+        # Reset token usage before processing
+        processor.token_usage = {"total_tokens": 0}
+        
+        # Process text and analyze emotion
+        segments_result = await processor.segment_text(request.text)
+        emotion_result = await processor.emotion_analyzer.analyze(request.text)
+        
         return {
             "status": "success",
             "message": "Processed text segments with emotion analysis",
             "data": {
-                "segments": segments,
-                "emotion": emotion_analysis
+                "segments": segments_result["segments"],
+                "emotion": emotion_result["result"]
+            },
+            "usage": {
+                "openai_embedding_tokens": {
+                    "total_tokens": segments_result["usage"]["total_tokens"],
+                    "model": segments_result["usage"]["model"]
+                },
+                "openai_chat_tokens": emotion_result["usage"]
             }
         }
     except Exception as e:
