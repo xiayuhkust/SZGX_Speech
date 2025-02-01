@@ -1,10 +1,9 @@
 from typing import Dict, Any
+import json
 from openai import OpenAI
-from app.core.config import settings
 
 class EmotionAnalyzer:
     def __init__(self):
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.system_prompt = """
 你是一个情感分析专家。你需要分析给定文本的情感强度，并给出0-5的评分。评分标准如下：
 0: 完全中性或无情感
@@ -24,7 +23,8 @@ class EmotionAnalyzer:
 
     async def analyze(self, text: str) -> Dict[str, Any]:
         try:
-            response = self.client.chat.completions.create(
+            client = OpenAI()
+            response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": self.system_prompt},
@@ -32,6 +32,9 @@ class EmotionAnalyzer:
                 ],
                 response_format={"type": "json_object"}
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            if content:
+                return json.loads(content)
+            raise Exception("Empty response from OpenAI")
         except Exception as e:
             raise Exception(f"Error analyzing emotion: {str(e)}")

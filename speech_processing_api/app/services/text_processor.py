@@ -1,21 +1,18 @@
 from typing import List, Dict
-from app.core.settings import get_settings
 import numpy as np
 from openai import OpenAI
 from app.services.emotion_analyzer import EmotionAnalyzer
 
-settings = get_settings()
-
 class TextProcessor:
     def __init__(self):
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.embedding_model = "text-embedding-ada-002"
         self.chunk_size = 1000  # 每个文本块的最大字符数
         self.emotion_analyzer = EmotionAnalyzer()
         
     async def get_embedding(self, text: str) -> List[float]:
         """获取文本的embedding向量"""
-        response = self.client.embeddings.create(
+        client = OpenAI()
+        response = client.embeddings.create(
             model=self.embedding_model,
             input=text
         )
