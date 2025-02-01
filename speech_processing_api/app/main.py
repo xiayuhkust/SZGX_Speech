@@ -1,11 +1,23 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
+import json
 
-app = FastAPI()
+app = FastAPI(
+    title="Speech Processing API",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None
+)
 
 @app.get("/")
-async def root():
-    return {"status": "ok", "message": "Speech Processing API is running"}
+def root():
+    return Response(
+        content=json.dumps({"status": "ok", "message": "Speech Processing API is running"}),
+        media_type="application/json"
+    )
 
 @app.get("/health")
-async def health():
-    return {"status": "healthy"}
+def health():
+    return Response(
+        content=json.dumps({"status": "healthy"}),
+        media_type="application/json"
+    )
