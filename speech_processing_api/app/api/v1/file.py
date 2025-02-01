@@ -1,0 +1,67 @@
+from fastapi import APIRouter, UploadFile, HTTPException
+from fastapi.responses import FileResponse
+from typing import Dict, Any
+import os
+from tempfile import NamedTemporaryFile
+from app.services.text_processor import TextProcessor
+
+router = APIRouter(prefix="/api/v1/file", tags=["file"])
+
+@router.post("/upload")
+async def upload_file(file: UploadFile):
+    if not file.filename.endswith('.txt'):
+        raise HTTPException(status_code=400, detail="Only .txt files are allowed")
+    
+    try:
+        # Create a temporary file to store the uploaded content
+        with NamedTemporaryFile(delete=False, suffix='.txt', mode='wb') as temp_file:
+            content = await file.read()
+            temp_file.write(content)
+            temp_file.flush()
+        
+        # Process the text content
+        with open(temp_file.name, 'r', encoding='utf-8') as f:
+            text_content = f.read()
+        
+        processor = TextProcessor()
+        segments_result = await processor.segment_text(text_content)
+        emotion_result = await processor.emotion_analyzer.analyze(text_content)
+        
+        # Create result file
+        result_file = NamedTemporaryFile(delete=False, suffix='_result.txt', mode='w', encoding='utf-8')
+        result_file.write("Text Analysis Results\n")
+        result_file.write("===================\n\n")
+        result_file.write("Original Segments:\n")
+        for i, segment in enumerate(segments_result["segments"], 1):
+            result_file.write(f"\nSegment {i}:\n{segment}\n")
+        
+        result_file.write("\nEmotion Analysis:\n")
+        result_file.write(f"Score: {emotion_result['result']['score']}\n")
+        result_file.write(f"Emotion: {emotion_result['result']['emotion']}\n")
+        result_file.write(f"Explanation: {emotion_result['result']['explanation']}\n")
+        
+        result_file.write("\nToken Usage:\n")
+        result_file.write("Embedding Tokens:\n")
+        result_file.write(f"Total: {segments_result['usage']['total_tokens']}\n")
+        result_file.write(f"Model: {segments_result['usage']['model']}\n")
+        
+        result_file.write("\nChat Completion Tokens:\n")
+        result_file.write(f"Prompt Tokens: {emotion_result['usage']['prompt_tokens']}\n")
+        result_file.write(f"Completion Tokens: {emotion_result['usage']['completion_tokens']}\n")
+        result_file.write(f"Total Tokens: {emotion_result['usage']['total_tokens']}\n")
+        result_file.write(f"Model: {emotion_result['usage']['model']}\n")
+        
+        result_file.close()
+        
+        # Clean up the input temp file
+        os.unlink(temp_file.name)
+        
+        # Return the result file
+        return FileResponse(
+            result_file.name,
+            media_type='text/plain',
+            filename=f"{os.path.splitext(file.filename)[0]}_analysis_result.txt"
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
