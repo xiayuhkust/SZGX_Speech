@@ -18,5 +18,8 @@ primary_region = "hkg"
   path = "/"
   timeout = "5s"
 
-[env]
-  PORT = "8000"
+[deploy]
+  strategy = "immediate"
+
+[processes]
+  app = "python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
