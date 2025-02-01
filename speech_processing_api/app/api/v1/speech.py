@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from app.services.text_processor import TextProcessor
 
-router = APIRouter(prefix="/speech", tags=["speech"])
+router = APIRouter(prefix="/api/v1/text", tags=["text"])
 
 class SpeechRequest(BaseModel):
     text: str
@@ -9,6 +10,12 @@ class SpeechRequest(BaseModel):
 @router.post("/process")
 async def process_speech(request: SpeechRequest):
     try:
-        return {"status": "success", "message": "Text received for processing"}
+        processor = TextProcessor()
+        segments = await processor.segment_text(request.text)
+        return {
+            "status": "success",
+            "message": "Processed text segments",
+            "data": segments
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
