@@ -28,5 +28,8 @@ RUN pip install "uvicorn[standard]" && \
     pip install "fastapi>=0.109.0" && \
     pip install "python-multipart>=0.0.6"
 
-# Start the application using uvicorn directly
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Make start script executable
+RUN chmod +x /app/start.sh
+
+# Start the application using the start script
+CMD ["/bin/bash", "/app/start.sh"]
