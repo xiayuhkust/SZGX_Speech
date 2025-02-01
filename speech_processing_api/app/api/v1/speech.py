@@ -12,10 +12,14 @@ async def process_speech(request: SpeechRequest):
     try:
         processor = TextProcessor()
         segments = await processor.segment_text(request.text)
+        emotion_analysis = await processor.emotion_analyzer.analyze(request.text)
         return {
             "status": "success",
-            "message": "Processed text segments",
-            "data": segments
+            "message": "Processed text segments with emotion analysis",
+            "data": {
+                "segments": segments,
+                "emotion": emotion_analysis
+            }
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
