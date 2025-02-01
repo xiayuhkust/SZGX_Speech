@@ -33,7 +33,7 @@ primary_region = "hkg"
     soft_limit = 20
 
 [processes]
-  app = "uvicorn app.main:app --host 0.0.0.0 --port 8000"
+  app = "/app/entrypoint.sh"
   auto_start_machines = true
   min_machines_running = 1
   processes = ["app"]

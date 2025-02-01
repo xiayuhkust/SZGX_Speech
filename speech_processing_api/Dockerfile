@@ -23,13 +23,12 @@ ENV PORT=8000
 
 EXPOSE 8000
 
-# Create and activate virtual environment
-RUN python -m venv /app/.venv
-ENV PATH="/app/.venv/bin:$PATH"
-ENV VIRTUAL_ENV="/app/.venv"
-
-# Install only the required dependencies in the virtual environment
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Start the application using uvicorn directly
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Create entrypoint script
+RUN echo '#!/bin/bash\ncd /app && exec uvicorn app.main:app --host 0.0.0.0 --port 8000' > /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh
+
+# Start the application
+ENTRYPOINT ["/app/entrypoint.sh"]
