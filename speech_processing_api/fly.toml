@@ -47,6 +47,7 @@ app = "speech-processing-api-chwkslwr"
   force_https = true
   min_machines_running = 1
   processes = 1
+  command = "./start.sh"
 
 [deploy]
   strategy = "immediate"
