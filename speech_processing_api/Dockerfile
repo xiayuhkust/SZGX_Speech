@@ -23,7 +23,8 @@ ENV PORT=8000
 
 EXPOSE 8000
 
+# Install dependencies
+RUN pip install "fastapi[all]" "uvicorn[standard]"
+
 # Start the application
-RUN pip install "fastapi[all]" && \
-    pip install "uvicorn[standard]"
-CMD ["/usr/local/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
