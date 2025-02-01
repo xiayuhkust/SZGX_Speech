@@ -2,6 +2,7 @@ from typing import List, Dict
 from app.core.settings import get_settings
 import numpy as np
 from openai import OpenAI
+from app.services.emotion_analyzer import EmotionAnalyzer
 
 settings = get_settings()
 
@@ -10,10 +11,11 @@ class TextProcessor:
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.embedding_model = "text-embedding-ada-002"
         self.chunk_size = 1000  # 每个文本块的最大字符数
+        self.emotion_analyzer = EmotionAnalyzer()
         
     async def get_embedding(self, text: str) -> List[float]:
         """获取文本的embedding向量"""
-        response = await self.client.embeddings.create(
+        response = self.client.embeddings.create(
             model=self.embedding_model,
             input=text
         )
@@ -52,4 +54,10 @@ class TextProcessor:
                 current_segment += chunks[i+1]
                 
         segments.append(current_segment)
-        return segments
+        
+        # 去除重复段落
+        from app.services.deduplication import DuplicationDetector
+        dedup = DuplicationDetector()
+        unique_segments = await dedup.find_duplicates(segments)
+        
+        return unique_segments
