@@ -9,7 +9,7 @@ router = APIRouter(prefix="/api/v1/file", tags=["file"])
 
 @router.post("/upload")
 async def upload_file(file: UploadFile):
-    if not file.filename.endswith('.txt'):
+    if not file.filename or not file.filename.endswith('.txt'):
         raise HTTPException(status_code=400, detail="Only .txt files are allowed")
     
     try:
@@ -60,7 +60,7 @@ async def upload_file(file: UploadFile):
         return FileResponse(
             result_file.name,
             media_type='text/plain',
-            filename=f"{os.path.splitext(file.filename)[0]}_analysis_result.txt"
+            filename=f"{os.path.splitext(file.filename or 'input')[0]}_analysis_result.txt"
         )
         
     except Exception as e:

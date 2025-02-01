@@ -32,18 +32,22 @@ class EmotionAnalyzer:
                 ],
                 response_format={"type": "json_object"}
             )
-            if response.choices and len(response.choices) > 0:
-                content = response.choices[0].message.content
-                if content:
-                    return {
-                        "result": json.loads(content),
-                        "usage": {
-                            "prompt_tokens": response.usage.prompt_tokens,
-                            "completion_tokens": response.usage.completion_tokens,
-                            "total_tokens": response.usage.total_tokens,
-                            "model": "gpt-3.5-turbo"
-                        }
-                    }
-            raise Exception("Empty response from OpenAI")
+            if not response.choices or not response.choices[0].message.content:
+                raise Exception("Empty response from OpenAI")
+                
+            content = response.choices[0].message.content
+            usage = response.usage
+            if not usage:
+                raise Exception("No usage information available")
+                
+            return {
+                "result": json.loads(content),
+                "usage": {
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "total_tokens": usage.total_tokens,
+                    "model": "gpt-3.5-turbo"
+                }
+            }
         except Exception as e:
             raise Exception(f"Error analyzing emotion: {str(e)}")
