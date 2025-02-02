@@ -1,15 +1,20 @@
 from fastapi import APIRouter, UploadFile, HTTPException, File
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from typing import Dict, Any
 import os
 import uuid
 from tempfile import NamedTemporaryFile
+from pathlib import Path
 from app.services.text_processor import TextProcessor
 from app.worker import celery_app
 
 router = APIRouter(prefix="/api/v1/file", tags=["file"])
 
-# Store processed files in memory
+# Create directory for storing processed files
+PROCESSED_FILES_DIR = Path("processed_files")
+PROCESSED_FILES_DIR.mkdir(exist_ok=True)
+
+# Store processed files metadata
 PROCESSED_FILES: Dict[str, Dict[str, Any]] = {}
 
 @router.post("/upload")
@@ -73,9 +78,14 @@ async def upload_file(file: UploadFile = File(..., description="Document to proc
             result_file.seek(0)
             result_content = result_file.read()
             
-            # Store the result in memory
+            # Save the result to a file
+            result_path = PROCESSED_FILES_DIR / f"{file_id}_result.txt"
+            with open(result_path, 'w', encoding='utf-8') as f:
+                f.write(result_content)
+            
+            # Store the file metadata
             PROCESSED_FILES[file_id] = {
-                'content': result_content,
+                'path': str(result_path),
                 'filename': f"{os.path.splitext(file.filename)[0]}_analysis_result.txt"
             }
             
@@ -103,7 +113,12 @@ async def download_file(file_id: str):
     if file_id not in PROCESSED_FILES:
         raise HTTPException(status_code=404, detail="File not found")
     
-    return JSONResponse({
-        'content': PROCESSED_FILES[file_id]['content'],
-        'filename': PROCESSED_FILES[file_id]['filename']
-    })
+    file_data = PROCESSED_FILES[file_id]
+    return FileResponse(
+        path=file_data['path'],
+        filename=file_data['filename'],
+        media_type='text/plain',
+        headers={
+            'Content-Disposition': f'attachment; filename="{file_data["filename"]}"'
+        }
+    )
