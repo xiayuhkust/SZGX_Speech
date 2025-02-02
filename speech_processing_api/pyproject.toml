@@ -7,8 +7,8 @@ package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.12"
-fastapi = {extras = ["standard"], version = "^0.115.8"}
-uvicorn = "^0.34.0"
+fastapi = {extras = ["all"], version = "^0.115.8"}
+uvicorn = {extras = ["standard"], version = "^0.34.0"}
 python-dotenv = "^1.0.1"
 openai = "^1.61.0"
 pydantic-settings = "^2.7.1"
@@ -17,10 +17,16 @@ redis = "^5.0.1"
 numpy = "^2.2.2"
 python-multipart = "^0.0.20"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+pytest-timeout = "^2.3.1"
+chardet = "^5.2.0"
+pytest = "^8.3.4"
+pytest-asyncio = "^0.25.3"
+httpx = "^0.28.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.4"
 pytest-asyncio = "^0.25.3"
+httpx = "^0.28.1"
 
 [build-system]
 requires = ["poetry-core"]
