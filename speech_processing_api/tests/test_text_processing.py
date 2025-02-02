@@ -11,7 +11,9 @@ load_dotenv(project_root / ".env")
 
 from app.services.text_processor import TextProcessor
 from app.worker import celery_app, process_text
+from app.utils.token_utils import estimate_tokens
 
+@pytest.mark.skip(reason="Requires Redis server")
 def test_text_processing():
     # Test text with mixed emotions, biblical references, and GBK characters
     test_text = """今天真是太开心了！真的太开心了！我终于完成了这个项目。
@@ -91,3 +93,27 @@ def test_text_processing():
     
     # Verify GBK character preservation
     assert gbk_chars_preserved, "Should preserve GBK-specific characters"
+
+@pytest.mark.asyncio
+async def test_large_text_processing():
+    processor = TextProcessor()
+    # Generate large text (>16K tokens)
+    large_text = "这是一个测试。" * 5000
+    
+    try:
+        result = await processor.process_text(large_text)
+        assert result["segments"], "Should have processed segments"
+        assert result["usage"]["total_tokens"] > 0, "Should track token usage"
+        assert all(s["emotion"] for s in result["segments"]), "All segments should have emotion"
+        
+        # Verify token estimation
+        total_tokens = estimate_tokens(large_text)
+        assert total_tokens > 16000, "Test text should exceed token limit"
+        
+        # Check segment sizes
+        for segment in result["segments"]:
+            segment_tokens = estimate_tokens(segment["text"])
+            assert segment_tokens <= 16000, "Each segment should be within token limit"
+            
+    except Exception as e:
+        assert False, f"Should handle large text without errors: {str(e)}"
