@@ -263,7 +263,11 @@ class TextProcessor:
             if not all_segments:
                 logging.error("文本分段处理失败，没有生成任何有效段落")
                 raise ValueError("文本处理失败：无法生成有效的文本段落")
-        
+                
+        except Exception as e:
+            logging.error(f"文本分段处理失败: {str(e)}")
+            raise
+            
         segment_result = {
             "segments": all_segments,
             "usage": {
