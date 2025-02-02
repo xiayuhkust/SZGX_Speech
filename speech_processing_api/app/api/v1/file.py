@@ -55,42 +55,42 @@ async def upload_file(file: UploadFile = File(..., description="Document to proc
             raise HTTPException(status_code=400, detail="Empty file uploaded")
         text_content = content.decode('utf-8')
             
-            # Process text using the comprehensive pipeline asynchronously
-            task = celery_app.send_task('process_text', args=[text_content])
-            result = task.get(timeout=300)  # 5 minutes timeout
+        # Process text using the comprehensive pipeline asynchronously
+        task = celery_app.send_task('process_text', args=[text_content])
+        result = task.get(timeout=300)  # 5 minutes timeout
+        
+        # Generate unique ID for the processed result
+        file_id = str(uuid.uuid4())
+        
+        # Create result file in the processed files directory
+        result_path = PROCESSED_FILES_DIR / f"{file_id}_result.txt"
+        with open(result_path, 'w', encoding='utf-8') as result_file:
+            result_file.write("Text Analysis Results\n")
+            result_file.write("===================\n\n")
+                
+            result_file.write("Processed Segments:\n")
+            for i, segment in enumerate(result["segments"], 1):
+                result_file.write(f"\nSegment {i}:\n")
+                result_file.write(f"Text: {segment['text']}\n")
+                result_file.write(f"Emotion: {segment['emotion']['emotion']} (Score: {segment['emotion']['score']})\n")
+                if segment['changes']:
+                    result_file.write("Changes Made:\n")
+                    for change in segment['changes']:
+                        result_file.write(f"- {change}\n")
+                if segment['biblical_references']:
+                    result_file.write("Biblical References:\n")
+                    for ref in segment['biblical_references']:
+                        result_file.write(f"- {ref}\n")
             
-            # Generate unique ID for the processed result
-            file_id = str(uuid.uuid4())
+            result_file.write("\nProcessing Statistics:\n")
+            result_file.write(f"Total Text Length: {result['usage']['text_length']} characters\n")
+            result_file.write(f"Number of Segments: {result['usage']['segment_count']}\n")
+            result_file.write(f"Total Tokens Used: {result['usage']['total_tokens']}\n")
+            result_file.write(f"Model Used: {result['usage']['model']}\n")
+            result_file.write(f"Estimated Cost: ${result['usage']['cost_estimate']}\n")
             
-            # Create result file in the processed files directory
-            result_path = PROCESSED_FILES_DIR / f"{file_id}_result.txt"
-            with open(result_path, 'w', encoding='utf-8') as result_file:
-                result_file.write("Text Analysis Results\n")
-                result_file.write("===================\n\n")
-                
-                result_file.write("Processed Segments:\n")
-                for i, segment in enumerate(result["segments"], 1):
-                    result_file.write(f"\nSegment {i}:\n")
-                    result_file.write(f"Text: {segment['text']}\n")
-                    result_file.write(f"Emotion: {segment['emotion']['emotion']} (Score: {segment['emotion']['score']})\n")
-                    if segment['changes']:
-                        result_file.write("Changes Made:\n")
-                        for change in segment['changes']:
-                            result_file.write(f"- {change}\n")
-                    if segment['biblical_references']:
-                        result_file.write("Biblical References:\n")
-                        for ref in segment['biblical_references']:
-                            result_file.write(f"- {ref}\n")
-                
-                result_file.write("\nProcessing Statistics:\n")
-                result_file.write(f"Total Text Length: {result['usage']['text_length']} characters\n")
-                result_file.write(f"Number of Segments: {result['usage']['segment_count']}\n")
-                result_file.write(f"Total Tokens Used: {result['usage']['total_tokens']}\n")
-                result_file.write(f"Model Used: {result['usage']['model']}\n")
-                result_file.write(f"Estimated Cost: ${result['usage']['cost_estimate']}\n")
-                
-                total_cost = result['usage']['cost_estimate']
-                result_file.write(f"\nTotal Estimated Cost: ${total_cost}")
+            total_cost = result['usage']['cost_estimate']
+            result_file.write(f"\nTotal Estimated Cost: ${total_cost}")
             
             # Store the file metadata with creation time
             PROCESSED_FILES[file_id] = {
