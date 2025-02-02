@@ -77,11 +77,12 @@ class TextSegmentProcessor:
             try:
                 result = await self.emotion_analyzer.analyze(chunk)
                 if "error" in result:
+                    logging.error(f"Error processing chunk: {result['error']}")
                     continue
                     
                 segment = {
                     "text": chunk,
-                    "emotion": result.get("emotion", {"emotion": "unknown", "score": 0}),
+                    "emotion": result.get("result", {"emotion": "unknown", "score": 0}),
                     "changes": result.get("changes", [])
                 }
                 all_segments.append(segment)
@@ -89,10 +90,16 @@ class TextSegmentProcessor:
                 
             except ValueError as e:
                 if "Text too long" in str(e):
-                    # Log the error and skip this chunk
-                    print(f"Chunk too long: {len(chunk)} characters")
+                    logging.warning(f"Chunk too long: {len(chunk)} characters")
                     continue
                 raise
+            except Exception as e:
+                logging.error(f"Error processing chunk: {str(e)}")
+                continue
+                
+        if not all_segments:
+            logging.error("No segments were successfully processed")
+            raise ValueError("Failed to process any text segments")
                 
         return {
             "segments": all_segments,
@@ -103,56 +110,6 @@ class TextSegmentProcessor:
                 "segment_count": len(all_segments)
             }
         }
-        
-        # Handle emotional transition markers
-        transition_markers = ['但是', '然而', '不过', '可是', '却', '反而', '相反']
-        for marker in transition_markers:
-            new_sentences = []
-            for sentence in sentences:
-                if marker in sentence:
-                    parts = sentence.split(marker)
-                    for i, part in enumerate(parts):
-                        if part.strip():
-                            if i > 0:
-                                new_sentences.append(marker + part.strip())
-                            else:
-                                new_sentences.append(part.strip())
-                else:
-                    new_sentences.append(sentence)
-            sentences = new_sentences
-            
-        current_chunk = ""
-        chunks = []
-        
-        for i in range(0, len(sentences)):
-            sentence = sentences[i]
-            
-            if len(current_chunk) + len(sentence) > self.chunk_size:
-                if current_chunk:
-                    chunks.append(current_chunk)
-                current_chunk = sentence
-            else:
-                current_chunk += sentence
-        
-        # Don't forget the last chunk
-        if current_chunk:
-            chunks.append(current_chunk)
-        
-        if current_chunk:
-            chunks.append(current_chunk)
-            
-        if not chunks:
-            chunks = [text]
-        
-        emotions = []
-        for chunk in chunks:
-            result = await self.emotion_analyzer.analyze(chunk)
-            emotions.append(result["result"])
-            self.token_usage["total_tokens"] += result["usage"]["total_tokens"]
-        
-        segments = []
-        current_segment = chunks[0]
-        current_emotion = emotions[0]
         
         # Process each chunk
         for i in range(1, len(chunks)):

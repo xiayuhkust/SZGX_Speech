@@ -45,39 +45,42 @@ class EmotionAnalyzer:
 
     async def analyze(self, text: str) -> Dict[str, Any]:
         try:
-            from app.utils.token_utils import estimate_tokens, MAX_TOKENS
+            from app.utils.token_utils import estimate_tokens, MAX_TOKENS, retry_with_timeout
             
             # Check token count
             estimated_tokens = estimate_tokens(text)
             if estimated_tokens > MAX_TOKENS:
                 raise ValueError(f"Text too long ({estimated_tokens} tokens)")
                 
-            client = OpenAI()
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": text}
-                ],
-                response_format={"type": "json_object"}
-            )
-            if not response.choices or not response.choices[0].message.content:
-                raise Exception("Empty response from OpenAI")
-                
-            content = response.choices[0].message.content
-            usage = response.usage
-            if not usage:
-                raise Exception("No usage information available")
-                
-            return {
-                "result": json.loads(content),
-                "usage": {
-                    "prompt_tokens": usage.prompt_tokens,
-                    "completion_tokens": usage.completion_tokens,
-                    "total_tokens": usage.total_tokens,
-                    "model": "gpt-3.5-turbo",
-                    "cost_estimate": round((usage.prompt_tokens * 0.001 + usage.completion_tokens * 0.002) / 1000, 6)
+            async def _make_openai_call():
+                client = OpenAI(timeout=30)
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": self.system_prompt},
+                        {"role": "user", "content": text}
+                    ],
+                    response_format={"type": "json_object"}
+                )
+                if not response.choices or not response.choices[0].message.content:
+                    raise Exception("Empty response from OpenAI")
+                    
+                content = response.choices[0].message.content
+                usage = response.usage
+                if not usage:
+                    raise Exception("No usage information available")
+                    
+                return {
+                    "result": json.loads(content),
+                    "usage": {
+                        "prompt_tokens": usage.prompt_tokens,
+                        "completion_tokens": usage.completion_tokens,
+                        "total_tokens": usage.total_tokens,
+                        "model": "gpt-3.5-turbo",
+                        "cost_estimate": round((usage.prompt_tokens * 0.001 + usage.completion_tokens * 0.002) / 1000, 6)
+                    }
                 }
-            }
+                
+            return await retry_with_timeout(_make_openai_call)
         except Exception as e:
             raise Exception(f"Error analyzing emotion: {str(e)}")
