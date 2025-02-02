@@ -13,6 +13,7 @@ from app.services.text_processor import TextProcessor
 from app.worker import celery_app, process_text
 from app.utils.token_utils import estimate_tokens
 
+@pytest.mark.skip(reason="Requires Redis server")
 def test_text_processing():
     # Test text with mixed emotions, biblical references, and GBK characters
     test_text = """今天真是太开心了！真的太开心了！我终于完成了这个项目。
