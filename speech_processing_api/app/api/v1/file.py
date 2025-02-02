@@ -108,9 +108,6 @@ async def upload_file(file: UploadFile = File(..., description="Document to proc
                 }
             })
             
-        finally:
-            pass  # No temporary files to clean up
-            
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
