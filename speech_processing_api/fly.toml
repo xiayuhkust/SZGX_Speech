@@ -47,7 +47,7 @@ app = "speech-processing-api-chwkslwr"
   force_https = true
   min_machines_running = 1
   processes = 1
-  command = "./start.sh"
+  command = "python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
 [deploy]
   strategy = "immediate"
