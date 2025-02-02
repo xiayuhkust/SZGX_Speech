@@ -50,18 +50,10 @@ async def upload_file(file: UploadFile = File(..., description="Document to proc
         raise HTTPException(status_code=400, detail="Only .txt, .doc, and .docx files are allowed")
     
     try:
-        # Create a temporary file to store the uploaded content
-        with NamedTemporaryFile(delete=False, suffix='.txt', mode='wb') as temp_file:
-            content = await file.read()
-            if len(content) == 0:
-                raise HTTPException(status_code=400, detail="Empty file uploaded")
-            temp_file.write(content)
-            temp_file.flush()
-        
-        try:
-            # Process the text content
-            with open(temp_file.name, 'r', encoding='utf-8') as f:
-                text_content = f.read()
+        content = await file.read()
+        if len(content) == 0:
+            raise HTTPException(status_code=400, detail="Empty file uploaded")
+        text_content = content.decode('utf-8')
             
             # Process text using the comprehensive pipeline asynchronously
             task = celery_app.send_task('process_text', args=[text_content])
@@ -100,15 +92,6 @@ async def upload_file(file: UploadFile = File(..., description="Document to proc
                 total_cost = result['usage']['cost_estimate']
                 result_file.write(f"\nTotal Estimated Cost: ${total_cost}")
             
-            # Read the result file content
-            result_file.seek(0)
-            result_content = result_file.read()
-            
-            # Save the result to a file
-            result_path = PROCESSED_FILES_DIR / f"{file_id}_result.txt"
-            with open(result_path, 'w', encoding='utf-8') as f:
-                f.write(result_content)
-            
             # Store the file metadata with creation time
             PROCESSED_FILES[file_id] = {
                 'path': str(result_path),
@@ -126,11 +109,7 @@ async def upload_file(file: UploadFile = File(..., description="Document to proc
             })
             
         finally:
-            # Clean up temporary files
-            if os.path.exists(temp_file.name):
-                os.unlink(temp_file.name)
-            if os.path.exists(result_file.name):
-                os.unlink(result_file.name)
+            pass  # No temporary files to clean up
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
