@@ -88,34 +88,33 @@ class BiblicalReferenceDetector:
         # - 约翰福音 三章十六节
         # - 约3:16
         # - 约三16
+        # - 腓立比书4:6
         self.reference_pattern = fr"""
+            [（(]?                        # Optional opening parenthesis
             (?:{'|'.join(book_patterns)})  # Book name
             \s*                            # Optional whitespace
             (?:                           # Chapter-verse group
-                (?:[{chinese_nums}]+章)?   # Optional Chinese chapter number
-                [0-9]+                    # Arabic chapter number
-                (?:                       # Verse number (optional)
-                    [:：]                  # Colon (Chinese or English)
-                    [0-9]+               # Arabic verse number
-                )?
-                |                        # OR
-                [{chinese_nums}]+章       # Chinese chapter
-                [{chinese_nums}]+节      # Chinese verse
+                [0-9]+                    # Chapter number
+                [:：]                      # Colon (Chinese or English)
+                [0-9]+                    # Verse number
             )
+            [）)]?                        # Optional closing parenthesis
         """
 
-    def find_references(self, text: str) -> List[Dict[str, Any]]:
+    def find_references(self, text: str) -> List[str]:
         """
         Find all biblical references in the given text.
-        Returns a list of dictionaries containing the reference and its position.
+        Returns a list of reference strings.
         """
         references = []
+        # Add debug print
+        print(f"Searching for biblical references in text: {text}")
         for match in re.finditer(self.reference_pattern, text, re.VERBOSE):
-            references.append({
-                "reference": match.group(0),
-                "start": match.start(),
-                "end": match.end()
-            })
+            ref = match.group(0)
+            print(f"Found reference: {ref}")
+            references.append(ref)
+        if not references:
+            print("No references found")
         return references
 
     def contains_references(self, text: str) -> bool:

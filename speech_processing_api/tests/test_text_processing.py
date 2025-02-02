@@ -1,12 +1,25 @@
 import pytest
+import sys
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Add the project root to Python path and load environment variables
+project_root = Path(__file__).parent.parent
+sys.path.append(str(project_root))
+load_dotenv(project_root / ".env")
+
 from app.services.text_processor import TextProcessor
 from app.worker import celery_app, process_text
 
 def test_text_processing():
-    # Test text with mixed emotions and potential biblical references
+    # Test text with mixed emotions, biblical references, and GBK characters
     test_text = """今天真是太开心了！真的太开心了！我终于完成了这个项目。
     这个项目让我学到了很多。我感到非常兴奋和激动，因为这是一个重要的里程碑。
-    这真是一个重要的里程碑啊！让我们继续努力，继续前进。"""
+    这真是一个重要的里程碑啊！让我们继续努力，继续前进。
+    但是想到前方的困难，我心里也充满忧虑。正如圣经所说：「应当一无挂虑，
+    只要凡事藉着祷告、祈求和感谢，将你们所要的告诉神。」（腓立比书4:6）
+    这给了我很大的安慰和鼓励。㈠㈡㈢㈣㈤"""
     
     # Test synchronous processing through Celery
     task = process_text.delay(test_text)
@@ -22,7 +35,11 @@ def test_text_processing():
     assert "cost_estimate" in result["usage"]
     assert "model" in result["usage"]
     
-    # Verify segment structure
+    # Verify segment structure and content
+    emotions_found = set()
+    biblical_refs_found = False
+    gbk_chars_preserved = False
+    
     for segment in result["segments"]:
         assert "text" in segment
         assert "emotion" in segment
@@ -33,3 +50,44 @@ def test_text_processing():
         assert "score" in segment["emotion"]
         assert isinstance(segment["emotion"]["score"], (int, float))
         assert 0 <= segment["emotion"]["score"] <= 5
+        
+        # Track emotions found
+        emotions_found.add(segment["emotion"]["emotion"])
+        
+        # Check for biblical references
+        if segment["biblical_references"]:
+            biblical_refs_found = True
+            assert any("腓立比书4:6" in ref for ref in segment["biblical_references"])
+        
+        # Check for GBK characters
+        if any(char in segment["text"] for char in "㈠㈡㈢㈣㈤"):
+            gbk_chars_preserved = True
+    
+    # Print debug information
+    print("\nDebug: Emotions found:", emotions_found)
+    print("Debug: Segments:", [
+        {
+            "text": s["text"][:50] + "...",
+            "emotion": s["emotion"]
+        } for s in result["segments"]
+    ])
+    
+    # Verify multiple emotions detected
+    assert len(result["segments"]) >= 2, f"Should detect at least 2 segments, found {len(result['segments'])}"
+    assert len(emotions_found) >= 2, f"Should detect multiple emotions, found: {emotions_found}"
+    
+    # Get emotion sequence
+    emotion_sequence = [segment["emotion"]["emotion"] for segment in result["segments"]]
+    print("Debug: Emotion sequence:", emotion_sequence)
+    
+    # Verify emotions and their sequence
+    assert "喜悦" in emotions_found, f"Should detect joyful emotions, found: {emotions_found}"
+    assert "忧虑" in emotions_found, f"Should detect worried emotions, found: {emotions_found}"
+    assert emotion_sequence[0] == "喜悦", f"First segment should be joyful, got: {emotion_sequence[0]}"
+    assert any(e == "忧虑" for e in emotion_sequence[1:]), f"Later segment should be worried, sequence: {emotion_sequence}"
+    
+    # Verify biblical reference detection
+    assert biblical_refs_found, "Should detect Philippians 4:6 reference"
+    
+    # Verify GBK character preservation
+    assert gbk_chars_preserved, "Should preserve GBK-specific characters"
