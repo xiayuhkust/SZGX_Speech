@@ -5,6 +5,7 @@ import os
 import uuid
 from tempfile import NamedTemporaryFile
 from app.services.text_processor import TextProcessor
+from app.worker import celery_app
 
 router = APIRouter(prefix="/api/v1/file", tags=["file"])
 
@@ -30,10 +31,9 @@ async def upload_file(file: UploadFile = File(..., description="Document to proc
             with open(temp_file.name, 'r', encoding='utf-8') as f:
                 text_content = f.read()
             
-            processor = TextProcessor()
-            
-            # Process text using the comprehensive pipeline
-            result = await processor.process_text(text_content)
+            # Process text using the comprehensive pipeline asynchronously
+            task = celery_app.send_task('process_text', args=[text_content])
+            result = task.get(timeout=300)  # 5 minutes timeout
             
             # Create result file
             result_file = NamedTemporaryFile(delete=False, suffix='_result.txt', mode='w', encoding='utf-8')
