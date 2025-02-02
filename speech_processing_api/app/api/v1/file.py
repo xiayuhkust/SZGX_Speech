@@ -5,6 +5,7 @@ import os
 import uuid
 from tempfile import NamedTemporaryFile
 from pathlib import Path
+from datetime import datetime, timedelta
 from app.services.text_processor import TextProcessor
 from app.worker import celery_app
 
@@ -14,7 +15,33 @@ router = APIRouter(prefix="/api/v1/file", tags=["file"])
 PROCESSED_FILES_DIR = Path("processed_files")
 PROCESSED_FILES_DIR.mkdir(exist_ok=True)
 
-# Store processed files metadata
+# Store processed files metadata with creation time
+PROCESSED_FILES: Dict[str, Dict[str, Any]] = {}
+
+@celery_app.task
+def cleanup_old_files():
+    """Remove processed files older than 24 hours."""
+    current_time = datetime.now()
+    files_to_remove = []
+    
+    for file_id, file_data in PROCESSED_FILES.items():
+        if current_time - file_data['created_at'] > timedelta(hours=24):
+            try:
+                Path(file_data['path']).unlink(missing_ok=True)
+                files_to_remove.append(file_id)
+            except Exception:
+                pass
+    
+    for file_id in files_to_remove:
+        PROCESSED_FILES.pop(file_id, None)
+
+# Schedule cleanup task to run every hour
+celery_app.conf.beat_schedule = {
+    'cleanup-old-files': {
+        'task': 'app.api.v1.file.cleanup_old_files',
+        'schedule': timedelta(hours=1),
+    },
+}
 PROCESSED_FILES: Dict[str, Dict[str, Any]] = {}
 
 @router.post("/upload")
@@ -83,10 +110,11 @@ async def upload_file(file: UploadFile = File(..., description="Document to proc
             with open(result_path, 'w', encoding='utf-8') as f:
                 f.write(result_content)
             
-            # Store the file metadata
+            # Store the file metadata with creation time
             PROCESSED_FILES[file_id] = {
                 'path': str(result_path),
-                'filename': f"{os.path.splitext(file.filename)[0]}_analysis_result.txt"
+                'filename': f"{os.path.splitext(file.filename)[0]}_analysis_result.txt",
+                'created_at': datetime.now()
             }
             
             return JSONResponse({
@@ -110,15 +138,28 @@ async def upload_file(file: UploadFile = File(..., description="Document to proc
 
 @router.get("/download/{file_id}")
 async def download_file(file_id: str):
+    """Download a processed file by its ID."""
     if file_id not in PROCESSED_FILES:
         raise HTTPException(status_code=404, detail="File not found")
     
     file_data = PROCESSED_FILES[file_id]
-    return FileResponse(
-        path=file_data['path'],
-        filename=file_data['filename'],
-        media_type='text/plain',
-        headers={
-            'Content-Disposition': f'attachment; filename="{file_data["filename"]}"'
-        }
-    )
+    file_path = Path(file_data['path'])
+    
+    if not file_path.exists():
+        PROCESSED_FILES.pop(file_id, None)
+        raise HTTPException(status_code=404, detail="File has been removed")
+    
+    try:
+        return FileResponse(
+            path=str(file_path),
+            filename=file_data['filename'],
+            media_type='text/plain',
+            headers={
+                'Content-Disposition': f'attachment; filename="{file_data["filename"]}"'
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error downloading file: {str(e)}"
+        )
