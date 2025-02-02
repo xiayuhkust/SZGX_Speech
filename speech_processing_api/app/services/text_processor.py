@@ -5,6 +5,7 @@ from app.services.emotion_analyzer import EmotionAnalyzer
 from app.services.deduplication import DuplicationDetector
 from app.services.text_improver import TextImprover
 from app.services.biblical_reference_detector import BiblicalReferenceDetector
+from app.services.history_logger import HistoryLogger
 
 class TextSegmentProcessor:
     """Handles text segmentation based on emotional content analysis.
@@ -91,6 +92,7 @@ class TextProcessor:
         self.dedup = DuplicationDetector()
         self.token_usage = {"total_tokens": 0}
         self.embedding_model = "text-embedding-ada-002"
+        self.history_logger = HistoryLogger()
         
     async def get_embedding(self, text: str) -> List[float]:
         """Get embedding vector for text using OpenAI's API.
@@ -163,12 +165,13 @@ class TextProcessor:
         
         # Step 3: Remove duplicates
         dedup_result = await self.dedup.find_duplicates([s["text"] for s in processed_segments])
-        self.token_usage["total_tokens"] += dedup_result["usage"]["total_tokens"]
+        if isinstance(dedup_result, dict) and "usage" in dedup_result:
+            self.token_usage["total_tokens"] += dedup_result["usage"].get("total_tokens", 0)
         
         # Calculate costs
         total_cost = round(self.token_usage["total_tokens"] * 0.002 / 1000, 6)
         
-        return {
+        result = {
             "segments": processed_segments,
             "usage": {
                 "total_tokens": self.token_usage["total_tokens"],
@@ -178,3 +181,9 @@ class TextProcessor:
                 "cost_estimate": total_cost
             }
         }
+        
+        # Log the processing run
+        log_files = self.history_logger.log_run(text, result)
+        result["log_files"] = log_files
+        
+        return result
