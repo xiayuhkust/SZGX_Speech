@@ -4,7 +4,17 @@ import os
 import tiktoken
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+def normalize_encoding(text: str) -> str:
+    try:
+        return text.encode('utf-8').decode('utf-8')
+    except UnicodeError:
+        try:
+            return text.encode('cp936').decode('utf-8')
+        except UnicodeError:
+            return text.encode('utf-8', errors='ignore').decode('utf-8')
+
 def estimate_tokens(text: Union[str, List[str]], model: str = "gpt-3.5-turbo") -> int:
+    text = normalize_encoding(text) if isinstance(text, str) else [normalize_encoding(t) for t in text]
     encoding = tiktoken.encoding_for_model(model)
     if isinstance(text, str):
         return len(encoding.encode(text))
@@ -24,7 +34,7 @@ REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "1800"))  # 30 minutes per re
 @retry(
     stop=stop_after_attempt(MAX_RETRIES),
     wait=wait_exponential(multiplier=1, min=MIN_RETRY_WAIT, max=MAX_RETRY_WAIT),
-    retry_error_callback=lambda retry_state: {"error": str(retry_state.outcome.exception())}
+    retry_error_callback=lambda retry_state: {"error": str(retry_state.outcome.exception()) if retry_state.outcome else "Unknown error"}
 )
 async def retry_with_timeout(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     try:

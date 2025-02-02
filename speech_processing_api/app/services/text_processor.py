@@ -65,13 +65,17 @@ class TextSegmentProcessor:
                 current_chunk += sentence
                 current_tokens += sentence_tokens
                 
-        # Add the last chunk if it exists
         if current_chunk:
             chunks.append(current_chunk)
+            
+        if not chunks:
+            chunks = [text]
             
         # Process each chunk
         all_segments = []
         total_tokens = 0
+        current_segment = ""
+        current_emotion = None
         
         for chunk in chunks:
             try:
@@ -79,21 +83,49 @@ class TextSegmentProcessor:
                 if "error" in result:
                     continue
                     
-                segment = {
-                    "text": chunk,
-                    "emotion": result.get("emotion", {"emotion": "unknown", "score": 0}),
-                    "changes": result.get("changes", [])
-                }
-                all_segments.append(segment)
+                emotion_data = result.get("emotion", {"emotion": "unknown", "score": 0})
+                
+                if current_emotion is None:
+                    current_emotion = emotion_data
+                    current_segment = chunk
+                else:
+                    emotion_changed = emotion_data["emotion"] != current_emotion["emotion"]
+                    score_diff = abs(emotion_data["score"] - current_emotion["score"])
+                    
+                    positive_emotions = ["喜悦", "惊喜", "期待", "满意"]
+                    negative_emotions = ["忧虑", "悲伤", "恐惧", "愤怒", "失望", "焦虑"]
+                    neutral_emotions = ["平静", "中性"]
+                    
+                    if (emotion_changed or 
+                        score_diff > 0.5 or 
+                        (current_emotion["emotion"] in positive_emotions and emotion_data["emotion"] in negative_emotions) or
+                        (emotion_data["emotion"] in positive_emotions and current_emotion["emotion"] in negative_emotions) or
+                        (current_emotion["emotion"] not in neutral_emotions and emotion_data["emotion"] in neutral_emotions)):
+                        
+                        all_segments.append({
+                            "text": current_segment,
+                            "emotion": current_emotion,
+                            "changes": []
+                        })
+                        current_segment = chunk
+                        current_emotion = emotion_data
+                    else:
+                        current_segment += chunk
+                        
                 total_tokens += result.get("usage", {}).get("total_tokens", 0)
                 
             except ValueError as e:
                 if "Text too long" in str(e):
-                    # Log the error and skip this chunk
-                    print(f"Chunk too long: {len(chunk)} characters")
                     continue
                 raise
                 
+        if current_segment:
+            all_segments.append({
+                "text": current_segment,
+                "emotion": current_emotion,
+                "changes": []
+            })
+            
         return {
             "segments": all_segments,
             "usage": {
@@ -101,97 +133,6 @@ class TextSegmentProcessor:
                 "model": "gpt-3.5-turbo",
                 "text_length": len(text),
                 "segment_count": len(all_segments)
-            }
-        }
-        
-        # Handle emotional transition markers
-        transition_markers = ['但是', '然而', '不过', '可是', '却', '反而', '相反']
-        for marker in transition_markers:
-            new_sentences = []
-            for sentence in sentences:
-                if marker in sentence:
-                    parts = sentence.split(marker)
-                    for i, part in enumerate(parts):
-                        if part.strip():
-                            if i > 0:
-                                new_sentences.append(marker + part.strip())
-                            else:
-                                new_sentences.append(part.strip())
-                else:
-                    new_sentences.append(sentence)
-            sentences = new_sentences
-            
-        current_chunk = ""
-        chunks = []
-        
-        for i in range(0, len(sentences)):
-            sentence = sentences[i]
-            
-            if len(current_chunk) + len(sentence) > self.chunk_size:
-                if current_chunk:
-                    chunks.append(current_chunk)
-                current_chunk = sentence
-            else:
-                current_chunk += sentence
-        
-        # Don't forget the last chunk
-        if current_chunk:
-            chunks.append(current_chunk)
-        
-        if current_chunk:
-            chunks.append(current_chunk)
-            
-        if not chunks:
-            chunks = [text]
-        
-        emotions = []
-        for chunk in chunks:
-            result = await self.emotion_analyzer.analyze(chunk)
-            emotions.append(result["result"])
-            self.token_usage["total_tokens"] += result["usage"]["total_tokens"]
-        
-        segments = []
-        current_segment = chunks[0]
-        current_emotion = emotions[0]
-        
-        # Process each chunk
-        for i in range(1, len(chunks)):
-            # Check for emotion changes or significant score differences
-            emotion_changed = emotions[i]["emotion"] != current_emotion["emotion"]
-            score_diff = abs(emotions[i]["score"] - current_emotion["score"])
-            
-            # Enhanced emotion transition detection with comprehensive emotional states
-            positive_emotions = ["喜悦", "惊喜", "期待", "满意"]
-            negative_emotions = ["忧虑", "悲伤", "恐惧", "愤怒", "失望", "焦虑"]
-            neutral_emotions = ["平静", "中性"]
-            
-            if (emotion_changed or 
-                score_diff > 0.5 or 
-                (current_emotion["emotion"] in positive_emotions and emotions[i]["emotion"] in negative_emotions) or
-                (emotions[i]["emotion"] in positive_emotions and current_emotion["emotion"] in negative_emotions) or
-                (current_emotion["emotion"] not in neutral_emotions and emotions[i]["emotion"] in neutral_emotions) or
-                any(marker in chunks[i] for marker in transition_markers)):
-                segments.append({
-                    "text": current_segment,
-                    "emotion": current_emotion
-                })
-                current_segment = chunks[i]
-                current_emotion = emotions[i]
-            else:
-                current_segment += chunks[i]
-                    
-        # Append the final segment
-        if current_segment:
-            segments.append({
-                "text": current_segment,
-                "emotion": current_emotion
-            })
-        
-        return {
-            "segments": segments,
-            "usage": {
-                "total_tokens": self.token_usage["total_tokens"],
-                "model": "gpt-3.5-turbo"
             }
         }
 
@@ -260,29 +201,10 @@ class TextProcessor:
         if not isinstance(text, str):
             raise ValueError("输入必须是字符串类型")
             
-        # Enhanced GBK character support
-        gbk_specific_chars = {
-            '㈠', '㈡', '㈢', '㈣', '㈤', '㈥', '㈦', '㈧', '㈨', '㈩',
-            '㊀', '㊁', '㊂', '㊃', '㊄', '㊅', '㊆', '㊇', '㊈', '㊉',
-            '㋀', '㋁', '㋂', '㋃', '㋄', '㋅', '㋆', '㋇', '㋈', '㋉', '㋊', '㋋'
-        }
-        special_chars_map = {i: c for i, c in enumerate(text) if c in gbk_specific_chars}
-        
+        # Handle text encoding
+        from app.utils.token_utils import normalize_encoding
         try:
-            # Handle special characters and traditional Chinese conversion
-            normalized_text = ""
-            for i, char in enumerate(text):
-                if i in special_chars_map:
-                    normalized_text += special_chars_map[i]
-                elif char in {'說':'说', '話':'话', '時':'时', '經':'经', '會':'会', 
-                            '這':'这', '個':'个', '們':'们', '從':'从', '應':'应',
-                            '將':'将', '為':'为', '與':'与', '無':'无', '實':'实'}:
-                    normalized_text += {'說':'说', '話':'话', '時':'时', '經':'经', '會':'会', 
-                                      '這':'这', '個':'个', '們':'们', '從':'从', '應':'应',
-                                      '將':'将', '為':'为', '與':'与', '無':'无', '實':'实'}[char]
-                else:
-                    normalized_text += char.encode().decode('utf-8')
-            text = normalized_text
+            text = normalize_encoding(text)
         except UnicodeError as e:
             logging.error(f"文本编码错误: {str(e)}, 文本: {text[:100]}...")
             raise ValueError(f"文本编码错误: {str(e)}")
