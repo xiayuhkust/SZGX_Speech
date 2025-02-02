@@ -16,6 +16,7 @@ celery = "^5.3.6"
 redis = "^5.0.1"
 numpy = "^2.2.2"
 python-multipart = "^0.0.20"
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.4"
@@ -26,6 +27,4 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-start = "uvicorn app.main:app --host 0.0.0.0 --port 8000"
-[tool.poetry.scripts]
-start = "uvicorn:run"
+start = "uvicorn app.main:app --host 0.0.0.0 --port 8080"
