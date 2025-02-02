@@ -34,7 +34,7 @@ REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "1800"))  # 30 minutes per re
 @retry(
     stop=stop_after_attempt(MAX_RETRIES),
     wait=wait_exponential(multiplier=1, min=MIN_RETRY_WAIT, max=MAX_RETRY_WAIT),
-    retry_error_callback=lambda retry_state: {"error": str(retry_state.outcome.exception())}
+    retry_error_callback=lambda retry_state: {"error": str(retry_state.outcome.exception()) if retry_state.outcome else "Unknown error"}
 )
 async def retry_with_timeout(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     try:
