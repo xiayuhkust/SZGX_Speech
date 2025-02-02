@@ -45,6 +45,13 @@ class EmotionAnalyzer:
 
     async def analyze(self, text: str) -> Dict[str, Any]:
         try:
+            from app.utils.token_utils import estimate_tokens, MAX_TOKENS
+            
+            # Check token count
+            estimated_tokens = estimate_tokens(text)
+            if estimated_tokens > MAX_TOKENS:
+                raise ValueError(f"Text too long ({estimated_tokens} tokens)")
+                
             client = OpenAI()
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",

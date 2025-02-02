@@ -14,45 +14,95 @@ logging.basicConfig(
 )
 
 class TextSegmentProcessor:
-    """Handles text segmentation based on emotional content analysis.
-    
-    Segments large texts into smaller chunks based on emotional similarity,
-    tracking token usage throughout the process.
-    """
+    """Handles text segmentation based on emotional content analysis."""
     
     def __init__(self):
-        """Initialize the text segment processor with required components."""
         self.emotion_analyzer = EmotionAnalyzer()
-        self.chunk_size = 3000  # ~1000 Chinese characters
+        from app.utils.token_utils import CHUNK_SIZE
+        self.chunk_size = CHUNK_SIZE
         self.token_usage = {"total_tokens": 0}
-        self.similarity_threshold = 0.8  # Threshold for emotion score difference
+        self.similarity_threshold = 0.8
+        
+    def _split_into_sentences(self, text: str) -> List[str]:
+        import re
+        pattern = '([。！？；：，…]+|\.{3,}|\!{2,}|\?{2,}|[!?。！？][—…]+)'
+        sentences = [s.strip() for s in re.split(pattern, text) if s.strip()]
+        
+        transition_markers = ['但是', '然而', '不过', '可是', '却', '反而', '相反']
+        for marker in transition_markers:
+            new_sentences = []
+            for sentence in sentences:
+                if marker in sentence:
+                    parts = sentence.split(marker)
+                    new_sentences.extend([p.strip() for p in parts if p.strip()])
+                else:
+                    new_sentences.append(sentence)
+            sentences = new_sentences
+        return sentences
 
     async def segment_by_emotion(self, text: str) -> Dict[str, Any]:
-        """Segment text based on emotional content changes.
-        
-        Args:
-            text: Input text to be segmented.
-            
-        Returns:
-            Dict containing:
-            - segments: List of dicts with text and emotion
-            - usage: Token usage statistics
-        """
         if not text:
             return {
                 "segments": [],
                 "usage": {"total_tokens": 0, "model": "gpt-3.5-turbo"}
             }
             
-        # Use smaller chunks for more precise emotion detection
-        self.chunk_size = 500  # ~150-175 Chinese characters for finer emotion detection
-        chunks = []
+        from app.utils.token_utils import estimate_tokens, CHUNK_SIZE
         
-        # Enhanced Chinese text segmentation with comprehensive punctuation handling
-        import re
-        # Split on sentence endings, emotional markers, and rhetorical breaks
-        pattern = '([。！？；：，…]+|\.{3,}|\!{2,}|\?{2,}|[!?。！？][—…]+)'
-        sentences = [s.strip() for s in re.split(pattern, text) if s.strip()]
+        # Split text into manageable chunks
+        chunks = []
+        current_chunk = ""
+        current_tokens = 0
+        
+        for sentence in self._split_into_sentences(text):
+            sentence_tokens = estimate_tokens(sentence)
+            if current_tokens + sentence_tokens > CHUNK_SIZE:
+                if current_chunk:
+                    chunks.append(current_chunk)
+                current_chunk = sentence
+                current_tokens = sentence_tokens
+            else:
+                current_chunk += sentence
+                current_tokens += sentence_tokens
+                
+        # Add the last chunk if it exists
+        if current_chunk:
+            chunks.append(current_chunk)
+            
+        # Process each chunk
+        all_segments = []
+        total_tokens = 0
+        
+        for chunk in chunks:
+            try:
+                result = await self.emotion_analyzer.analyze(chunk)
+                if "error" in result:
+                    continue
+                    
+                segment = {
+                    "text": chunk,
+                    "emotion": result.get("emotion", {"emotion": "unknown", "score": 0}),
+                    "changes": result.get("changes", [])
+                }
+                all_segments.append(segment)
+                total_tokens += result.get("usage", {}).get("total_tokens", 0)
+                
+            except ValueError as e:
+                if "Text too long" in str(e):
+                    # Log the error and skip this chunk
+                    print(f"Chunk too long: {len(chunk)} characters")
+                    continue
+                raise
+                
+        return {
+            "segments": all_segments,
+            "usage": {
+                "total_tokens": total_tokens,
+                "model": "gpt-3.5-turbo",
+                "text_length": len(text),
+                "segment_count": len(all_segments)
+            }
+        }
         
         # Handle emotional transition markers
         transition_markers = ['但是', '然而', '不过', '可是', '却', '反而', '相反']
