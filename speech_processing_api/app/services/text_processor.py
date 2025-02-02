@@ -1,11 +1,17 @@
 from typing import List, Dict, Any
 import numpy as np
+import logging
 from openai import OpenAI
 from app.services.emotion_analyzer import EmotionAnalyzer
 from app.services.deduplication import DuplicationDetector
 from app.services.text_improver import TextImprover
 from app.services.biblical_reference_detector import BiblicalReferenceDetector
 from app.services.history_logger import HistoryLogger
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 class TextSegmentProcessor:
     """Handles text segmentation based on emotional content analysis.
@@ -42,18 +48,34 @@ class TextSegmentProcessor:
         self.chunk_size = 500  # ~150-175 Chinese characters for finer emotion detection
         chunks = []
         
-        # Split text at sentence boundaries and emotional punctuation for more natural chunks
+        # Enhanced Chinese text segmentation with comprehensive punctuation handling
         import re
-        # Split on sentence endings and emotional markers
-        sentences = [s.strip() for s in re.split('([。！？])', text) if s.strip()]
+        # Split on sentence endings, emotional markers, and rhetorical breaks
+        pattern = '([。！？；：，…]+|\.{3,}|\!{2,}|\?{2,}|[!?。！？][—…]+)'
+        sentences = [s.strip() for s in re.split(pattern, text) if s.strip()]
+        
+        # Handle emotional transition markers
+        transition_markers = ['但是', '然而', '不过', '可是', '却', '反而', '相反']
+        for marker in transition_markers:
+            new_sentences = []
+            for sentence in sentences:
+                if marker in sentence:
+                    parts = sentence.split(marker)
+                    for i, part in enumerate(parts):
+                        if part.strip():
+                            if i > 0:
+                                new_sentences.append(marker + part.strip())
+                            else:
+                                new_sentences.append(part.strip())
+                else:
+                    new_sentences.append(sentence)
+            sentences = new_sentences
+            
         current_chunk = ""
         chunks = []
         
-        for i in range(0, len(sentences), 2):
+        for i in range(0, len(sentences)):
             sentence = sentences[i]
-            # Add the punctuation back if available
-            if i + 1 < len(sentences):
-                sentence += sentences[i + 1]
             
             if len(current_chunk) + len(sentence) > self.chunk_size:
                 if current_chunk:
@@ -88,14 +110,17 @@ class TextSegmentProcessor:
             emotion_changed = emotions[i]["emotion"] != current_emotion["emotion"]
             score_diff = abs(emotions[i]["score"] - current_emotion["score"])
             
-            # Create a new segment if:
-            # 1. The emotion type changes
-            # 2. There's a significant change in emotion intensity
-            # 3. We detect a transition between positive and negative emotions
+            # Enhanced emotion transition detection with comprehensive emotional states
+            positive_emotions = ["喜悦", "惊喜", "期待", "满意"]
+            negative_emotions = ["忧虑", "悲伤", "恐惧", "愤怒", "失望", "焦虑"]
+            neutral_emotions = ["平静", "中性"]
+            
             if (emotion_changed or 
                 score_diff > 0.5 or 
-                (current_emotion["emotion"] in ["喜悦", "惊喜"] and emotions[i]["emotion"] in ["忧虑", "悲伤", "恐惧"]) or
-                (emotions[i]["emotion"] in ["喜悦", "惊喜"] and current_emotion["emotion"] in ["忧虑", "悲伤", "恐惧"])):
+                (current_emotion["emotion"] in positive_emotions and emotions[i]["emotion"] in negative_emotions) or
+                (emotions[i]["emotion"] in positive_emotions and current_emotion["emotion"] in negative_emotions) or
+                (current_emotion["emotion"] not in neutral_emotions and emotions[i]["emotion"] in neutral_emotions) or
+                any(marker in chunks[i] for marker in transition_markers)):
                 segments.append({
                     "text": current_segment,
                     "emotion": current_emotion
@@ -185,32 +210,59 @@ class TextProcessor:
         if not isinstance(text, str):
             raise ValueError("输入必须是字符串类型")
             
-        # Check for GBK-specific characters
-        gbk_specific_chars = {'㈠', '㈡', '㈢', '㈣', '㈤'}
+        # Enhanced GBK character support
+        gbk_specific_chars = {
+            '㈠', '㈡', '㈢', '㈣', '㈤', '㈥', '㈦', '㈧', '㈨', '㈩',
+            '㊀', '㊁', '㊂', '㊃', '㊄', '㊅', '㊆', '㊇', '㊈', '㊉',
+            '㋀', '㋁', '㋂', '㋃', '㋄', '㋅', '㋆', '㋇', '㋈', '㋉', '㋊', '㋋'
+        }
         special_chars_map = {i: c for i, c in enumerate(text) if c in gbk_specific_chars}
         
         try:
-            # Normalize text encoding to UTF-8 while preserving special characters
+            # Handle special characters and traditional Chinese conversion
             normalized_text = ""
             for i, char in enumerate(text):
                 if i in special_chars_map:
                     normalized_text += special_chars_map[i]
+                elif char in {'說':'说', '話':'话', '時':'时', '經':'经', '會':'会', 
+                            '這':'这', '個':'个', '們':'们', '從':'从', '應':'应',
+                            '將':'将', '為':'为', '與':'与', '無':'无', '實':'实'}:
+                    normalized_text += {'說':'说', '話':'话', '時':'时', '經':'经', '會':'会', 
+                                      '這':'这', '個':'个', '們':'们', '從':'从', '應':'应',
+                                      '將':'将', '為':'为', '與':'与', '無':'无', '實':'实'}[char]
                 else:
                     normalized_text += char.encode().decode('utf-8')
             text = normalized_text
-        except UnicodeError:
-            raise ValueError("文本包含无效的Unicode字符")
+        except UnicodeError as e:
+            logging.error(f"文本编码错误: {str(e)}, 文本: {text[:100]}...")
+            raise ValueError(f"文本编码错误: {str(e)}")
+        except Exception as e:
+            logging.error(f"处理文本时出错: {str(e)}, 文本: {text[:100]}...")
+            raise ValueError(f"处理文本时出错: {str(e)}")
+            
+        if len(text.strip()) < 10:
+            logging.warning(f"文本过短: {text}")
+            raise ValueError("文本长度必须大于10个字符")
             
         # Step 1: Split text at emotional transitions and analyze each part
-        parts = text.split("但是")
-        all_segments = []
-        total_tokens = 0
-        
-        for part in parts:
-            if part.strip():
-                segment_result = await self.segment_processor.segment_by_emotion(part.strip())
-                total_tokens += segment_result["usage"]["total_tokens"]
-                all_segments.extend(segment_result["segments"])
+        try:
+            parts = text.split("但是")
+            all_segments = []
+            total_tokens = 0
+            
+            for part in parts:
+                if part.strip():
+                    try:
+                        segment_result = await self.segment_processor.segment_by_emotion(part.strip())
+                        total_tokens += segment_result["usage"]["total_tokens"]
+                        all_segments.extend(segment_result["segments"])
+                    except Exception as e:
+                        logging.error(f"处理文本段落时出错: {str(e)}, 段落: {part[:100]}...")
+                        continue
+                        
+            if not all_segments:
+                logging.error("文本分段处理失败，没有生成任何有效段落")
+                raise ValueError("文本处理失败：无法生成有效的文本段落")
         
         segment_result = {
             "segments": all_segments,
@@ -229,15 +281,23 @@ class TextProcessor:
             current_text = segment["text"]
             
             # Improve text while maintaining emotion
-            improved_result = await self.text_improver.improve_text(
-                current_text,
-                emotion_score=segment["emotion"]["score"],
-                emotion_type=segment["emotion"]["emotion"]
-            )
-            
-            import json
-            result_json = json.loads(improved_result["result"])
-            improved_text = result_json["improved_text"]
+            try:
+                improved_result = await self.text_improver.improve_text(
+                    current_text,
+                    emotion_score=segment["emotion"]["score"],
+                    emotion_type=segment["emotion"]["emotion"]
+                )
+                
+                import json
+                result_json = json.loads(improved_result["result"])
+                improved_text = result_json["improved_text"]
+                
+                if not improved_text or len(improved_text.strip()) < 5:
+                    logging.warning(f"文本改进结果无效: {current_text[:100]}...")
+                    improved_text = current_text
+            except Exception as e:
+                logging.error(f"改进文本时出错: {str(e)}, 原文: {current_text[:100]}...")
+                improved_text = current_text
             
             # Check for GBK-specific characters in this segment
             gbk_specific_chars = {'㈠', '㈡', '㈢', '㈣', '㈤'}
@@ -257,11 +317,27 @@ class TextProcessor:
             self.token_usage["total_tokens"] += improved_result["usage"]["total_tokens"]
         
         # Step 3: Remove duplicates
-        dedup_result = await self.dedup.find_duplicates([s["text"] for s in processed_segments])
-        if isinstance(dedup_result, dict):
-            usage_data = getattr(dedup_result, "usage", {})
-            if isinstance(usage_data, dict):
-                self.token_usage["total_tokens"] += usage_data.get("total_tokens", 0)
+        try:
+            dedup_result = await self.dedup.find_duplicates([s["text"] for s in processed_segments])
+            if isinstance(dedup_result, dict):
+                usage_data = getattr(dedup_result, "usage", {})
+                if isinstance(usage_data, dict):
+                    self.token_usage["total_tokens"] += usage_data.get("total_tokens", 0)
+                    
+                # Filter out duplicate segments
+                unique_segments = []
+                seen_texts = set()
+                for segment in processed_segments:
+                    if segment["text"] not in seen_texts:
+                        unique_segments.append(segment)
+                        seen_texts.add(segment["text"])
+                processed_segments = unique_segments
+                
+                if len(unique_segments) < len(processed_segments):
+                    logging.info(f"去重完成: 从{len(processed_segments)}段减少到{len(unique_segments)}段")
+        except Exception as e:
+            logging.error(f"文本去重时出错: {str(e)}")
+            # Continue with original segments if deduplication fails
         
         # Calculate costs
         total_cost = round(self.token_usage["total_tokens"] * 0.002 / 1000, 6)
@@ -277,8 +353,22 @@ class TextProcessor:
             }
         }
         
-        # Log the processing run
-        log_files = self.history_logger.log_run(text, result)
-        result["log_files"] = log_files
+        # Log the processing run and handle any errors
+        try:
+            log_files = self.history_logger.log_run(text, result)
+            result["log_files"] = log_files
+        except Exception as e:
+            logging.error(f"记录处理历史时出错: {str(e)}")
+            result["log_files"] = []
+            
+        # Add processing summary to result
+        result["summary"] = {
+            "original_length": len(text),
+            "processed_length": sum(len(s["text"]) for s in processed_segments),
+            "segment_count": len(processed_segments),
+            "has_duplicates": len(unique_segments) < len(processed_segments) if 'unique_segments' in locals() else False,
+            "processing_status": "success"
+        }
         
+        logging.info(f"文本处理完成: {result['summary']}")
         return result
