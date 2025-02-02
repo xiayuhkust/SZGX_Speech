@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     
     DEEPSEEK_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
+    REDIS_URL: str = "redis://localhost:6379/0"
+    ADMIN_API_KEY: str = ""
     
     class Config:
         env_file = ".env"

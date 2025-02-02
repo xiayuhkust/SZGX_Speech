@@ -7,15 +7,24 @@ package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.12"
-fastapi = "^0.115.8"
+fastapi = {extras = ["standard"], version = "^0.115.8"}
 uvicorn = "^0.34.0"
 python-dotenv = "^1.0.1"
 openai = "^1.61.0"
 pydantic-settings = "^2.7.1"
+celery = "^5.3.6"
+redis = "^5.0.1"
+numpy = "^2.2.2"
+python-multipart = "^0.0.20"
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.4"
+pytest-asyncio = "^0.25.3"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-start = "uvicorn app.main:app --host 0.0.0.0 --port 8000"
+start = "uvicorn app.main:app --host 0.0.0.0 --port 8080"
