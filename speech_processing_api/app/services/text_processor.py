@@ -165,8 +165,10 @@ class TextProcessor:
         
         # Step 3: Remove duplicates
         dedup_result = await self.dedup.find_duplicates([s["text"] for s in processed_segments])
-        if isinstance(dedup_result, dict) and "usage" in dedup_result:
-            self.token_usage["total_tokens"] += dedup_result["usage"].get("total_tokens", 0)
+        if isinstance(dedup_result, dict):
+            usage_data = getattr(dedup_result, "usage", {})
+            if isinstance(usage_data, dict):
+                self.token_usage["total_tokens"] += usage_data.get("total_tokens", 0)
         
         # Calculate costs
         total_cost = round(self.token_usage["total_tokens"] * 0.002 / 1000, 6)
