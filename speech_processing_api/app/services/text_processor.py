@@ -5,17 +5,108 @@ from app.services.emotion_analyzer import EmotionAnalyzer
 from app.services.deduplication import DuplicationDetector
 from app.services.text_improver import TextImprover
 from app.services.biblical_reference_detector import BiblicalReferenceDetector
+from app.services.history_logger import HistoryLogger
+
+class TextSegmentProcessor:
+    """Handles text segmentation based on emotional content analysis.
+    
+    Segments large texts into smaller chunks based on emotional similarity,
+    tracking token usage throughout the process.
+    """
+    
+    def __init__(self):
+        """Initialize the text segment processor with required components."""
+        self.emotion_analyzer = EmotionAnalyzer()
+        self.chunk_size = 3000  # ~1000 Chinese characters
+        self.token_usage = {"total_tokens": 0}
+        self.similarity_threshold = 0.8  # Threshold for emotion score difference
+
+    async def segment_by_emotion(self, text: str) -> Dict[str, Any]:
+        """Segment text based on emotional content changes.
+        
+        Args:
+            text: Input text to be segmented.
+            
+        Returns:
+            Dict containing:
+            - segments: List of dicts with text and emotion
+            - usage: Token usage statistics
+        """
+        if not text:
+            return {
+                "segments": [],
+                "usage": {"total_tokens": 0, "model": "gpt-3.5-turbo"}
+            }
+            
+        chunks = [text[i:i+self.chunk_size] for i in range(0, len(text), self.chunk_size)]
+        
+        emotions = []
+        for chunk in chunks:
+            result = await self.emotion_analyzer.analyze(chunk)
+            emotions.append(result["result"])
+            self.token_usage["total_tokens"] += result["usage"]["total_tokens"]
+        
+        segments = []
+        current_segment = chunks[0]
+        current_emotion = emotions[0]
+        
+        for i in range(1, len(chunks)):
+            if abs(emotions[i]["score"] - current_emotion["score"]) > 1:
+                segments.append({
+                    "text": current_segment,
+                    "emotion": current_emotion
+                })
+                current_segment = chunks[i]
+                current_emotion = emotions[i]
+            else:
+                current_segment += chunks[i]
+                
+        segments.append({
+            "text": current_segment,
+            "emotion": current_emotion
+        })
+        
+        return {
+            "segments": segments,
+            "usage": {
+                "total_tokens": self.token_usage["total_tokens"],
+                "model": "gpt-3.5-turbo"
+            }
+        }
 
 class TextProcessor:
+    """Main text processing pipeline handler.
+    
+    Coordinates the text processing workflow including:
+    - Emotion-based segmentation
+    - Biblical reference detection and standardization
+    - Text improvement while maintaining emotional context
+    - Deduplication of similar segments
+    - Token usage tracking across all operations
+    """
+    
     def __init__(self):
-        self.embedding_model = "text-embedding-ada-002"
-        self.chunk_size = 1000  # 每个文本块的最大字符数
-        self.emotion_analyzer = EmotionAnalyzer()
+        self.segment_processor = TextSegmentProcessor()
         self.text_improver = TextImprover()
         self.biblical_detector = BiblicalReferenceDetector()
+        self.dedup = DuplicationDetector()
         self.token_usage = {"total_tokens": 0}
+        self.embedding_model = "text-embedding-ada-002"
+        self.history_logger = HistoryLogger()
         
     async def get_embedding(self, text: str) -> List[float]:
+        """Get embedding vector for text using OpenAI's API.
+        
+        Args:
+            text: Input text to get embedding for
+            
+        Returns:
+            List of floats representing the text embedding
+            
+        Note:
+            This method is used internally for semantic similarity comparison
+            and should not be called directly from outside the class.
+        """
         client = OpenAI()
         response = client.embeddings.create(
             model=self.embedding_model,
@@ -24,88 +115,75 @@ class TextProcessor:
         self.token_usage["total_tokens"] += response.usage.total_tokens
         return response.data[0].embedding if isinstance(response.data, list) and len(response.data) > 0 else []
         
-    async def segment_text(self, text: str) -> Dict[str, Any]:
-        """基于语义相似度的文本分段"""
-        # 如果文本较短，直接返回
-        if len(text) < self.chunk_size:
-            # Get embedding for the single segment
-            _ = await self.get_embedding(text)
+    async def process_text(self, text: str) -> Dict[str, Any]:
+        """Process text through the complete pipeline.
+        
+        Args:
+            text: Input text to be processed
+            
+        Returns:
+            Dict containing processed segments and usage statistics
+        """
+        if not text:
             return {
-                "segments": [text],
+                "segments": [],
                 "usage": {
-                    "total_tokens": self.token_usage["total_tokens"],
+                    "total_tokens": 0,
                     "model": self.embedding_model,
-                    "text_length": len(text),
-                    "segment_count": 1,
-                    "cost_estimate": round(self.token_usage["total_tokens"] * 0.0001 / 1000, 6)
+                    "text_length": 0,
+                    "segment_count": 0,
+                    "cost_estimate": 0
                 }
             }
             
-        # 将文本分成初始块
-        chunks = [text[i:i+self.chunk_size] for i in range(0, len(text), self.chunk_size)]
+        # Step 1: Emotion-based segmentation
+        segment_result = await self.segment_processor.segment_by_emotion(text)
+        self.token_usage["total_tokens"] += segment_result["usage"]["total_tokens"]
         
-        # 获取每个块的embedding
-        embeddings = []
-        for chunk in chunks:
-            embedding = await self.get_embedding(chunk)
-            embeddings.append(embedding)
+        # Step 2: Process each segment
+        processed_segments = []
+        for segment in segment_result["segments"]:
+            # Detect and standardize biblical references
+            references = self.biblical_detector.find_references(segment["text"])
+            current_text = segment["text"]
             
-        # 计算相邻块之间的相似度
-        similarities = []
-        for i in range(len(embeddings)-1):
-            similarity = np.dot(embeddings[i], embeddings[i+1])
-            similarities.append(similarity)
+            # Improve text while maintaining emotion
+            improved_result = await self.text_improver.improve_text(
+                current_text,
+                emotion_score=segment["emotion"]["score"],
+                emotion_type=segment["emotion"]["emotion"]
+            )
             
-        # 根据相似度确定分段点
-        segments = []
-        current_segment = chunks[0]
+            processed_segments.append({
+                "text": improved_result["result"]["improved_text"],
+                "emotion": segment["emotion"],
+                "changes": improved_result["result"]["changes_made"],
+                "biblical_references": references
+            })
+            
+            self.token_usage["total_tokens"] += improved_result["usage"]["total_tokens"]
         
-        for i, similarity in enumerate(similarities):
-            if similarity < 0.8:  # 相似度阈值
-                segments.append(current_segment)
-                current_segment = chunks[i+1]
-            else:
-                current_segment += chunks[i+1]
-                
-        segments.append(current_segment)
+        # Step 3: Remove duplicates
+        dedup_result = await self.dedup.find_duplicates([s["text"] for s in processed_segments])
+        if isinstance(dedup_result, dict) and "usage" in dedup_result:
+            self.token_usage["total_tokens"] += dedup_result["usage"].get("total_tokens", 0)
         
-        # 去除重复段落
-        from app.services.deduplication import DuplicationDetector
-        dedup = DuplicationDetector()
-        unique_segments = await dedup.find_duplicates(segments)
+        # Calculate costs
+        total_cost = round(self.token_usage["total_tokens"] * 0.002 / 1000, 6)
         
-        # 改进文本流畅度
-        improved_segments = []
-        improvement_usage = {"total_tokens": 0, "cost_estimate": 0}
-        for segment in unique_segments:
-            improved_result = await self.text_improver.improve_text(segment)
-            improved_segments.append(improved_result["result"])
-            improvement_usage["total_tokens"] += improved_result["usage"]["total_tokens"]
-            improvement_usage["cost_estimate"] += improved_result["usage"]["cost_estimate"]
-        
-        # Combine token usage from all steps
-        total_embedding_usage = {
-            "total_tokens": self.token_usage["total_tokens"] + dedup.token_usage["total_tokens"],
-            "model": self.embedding_model
-        }
-        
-        total_tokens = total_embedding_usage["total_tokens"]
-        embedding_cost = round(total_tokens * 0.0001 / 1000, 6)
-        
-        return {
-            "segments": improved_segments,
+        result = {
+            "segments": processed_segments,
             "usage": {
-                "embedding": {
-                    **total_embedding_usage,
-                    "cost_estimate": embedding_cost
-                },
-                "improvement": {
-                    "total_tokens": improvement_usage["total_tokens"],
-                    "model": self.text_improver.model,
-                    "cost_estimate": improvement_usage["cost_estimate"]
-                },
+                "total_tokens": self.token_usage["total_tokens"],
+                "model": "gpt-3.5-turbo",
                 "text_length": len(text),
-                "segment_count": len(improved_segments),
-                "total_cost_estimate": round(embedding_cost + improvement_usage["cost_estimate"], 6)
+                "segment_count": len(processed_segments),
+                "cost_estimate": total_cost
             }
         }
+        
+        # Log the processing run
+        log_files = self.history_logger.log_run(text, result)
+        result["log_files"] = log_files
+        
+        return result
