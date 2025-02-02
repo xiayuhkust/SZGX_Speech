@@ -4,7 +4,17 @@ import os
 import tiktoken
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+def normalize_encoding(text: str) -> str:
+    try:
+        return text.encode('utf-8').decode('utf-8')
+    except UnicodeError:
+        try:
+            return text.encode('cp936').decode('utf-8')
+        except UnicodeError:
+            return text.encode('utf-8', errors='ignore').decode('utf-8')
+
 def estimate_tokens(text: Union[str, List[str]], model: str = "gpt-3.5-turbo") -> int:
+    text = normalize_encoding(text) if isinstance(text, str) else [normalize_encoding(t) for t in text]
     encoding = tiktoken.encoding_for_model(model)
     if isinstance(text, str):
         return len(encoding.encode(text))

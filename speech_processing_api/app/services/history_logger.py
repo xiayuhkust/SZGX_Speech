@@ -43,9 +43,14 @@ class HistoryLogger:
             }
             processing_file.write_text(json.dumps(processing_data, indent=2, ensure_ascii=False))
             
-            # Log final result
-            final_file = run_folder / "finalresult.json"
-            final_data = {
+            # Log final result as clean text
+            final_file = run_folder / "finalresult.txt"
+            processed_text = "\n\n".join(segment["text"] for segment in result["segments"])
+            final_file.write_text(processed_text, encoding='utf-8')
+            
+            # Log technical summary
+            summary_file = run_folder / "summary.json"
+            summary_data = {
                 "timestamp": timestamp,
                 "summary": {
                     "original_length": len(input_text),
@@ -53,22 +58,14 @@ class HistoryLogger:
                     "segment_count": len(result["segments"]),
                     "has_duplicates": any(s.get("is_duplicate", False) for s in result["segments"]),
                     "processing_status": "success"
-                },
-                "segments": [
-                    {
-                        "text": segment["text"],
-                        "emotion": segment["emotion"],
-                        "changes": segment.get("changes", []),
-                        "biblical_references": segment.get("biblical_references", [])
-                    }
-                    for segment in result["segments"]
-                ]
+                }
             }
-            final_file.write_text(json.dumps(final_data, indent=2, ensure_ascii=False))
+            summary_file.write_text(json.dumps(summary_data, indent=2, ensure_ascii=False))
             
             return {
                 "usage_log": str(usage_file),
                 "processing_log": str(processing_file),
+                "summary": str(summary_file),
                 "final_result": str(final_file)
             }
             
