@@ -154,10 +154,12 @@ class TextProcessor:
                 emotion_type=segment["emotion"]["emotion"]
             )
             
+            import json
+            result_json = json.loads(improved_result["result"])
             processed_segments.append({
-                "text": improved_result["result"]["improved_text"],
+                "text": result_json["improved_text"],
                 "emotion": segment["emotion"],
-                "changes": improved_result["result"]["changes_made"],
+                "changes": result_json["changes_made"],
                 "biblical_references": references
             })
             
