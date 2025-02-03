@@ -25,20 +25,43 @@ class TextSegmentProcessor:
         
     def _split_into_sentences(self, text: str) -> List[str]:
         import re
-        pattern = '([。！？；：，…]+|\.{3,}|\!{2,}|\?{2,}|[!?。！？][—…]+)'
-        sentences = [s.strip() for s in re.split(pattern, text) if s.strip()]
+        pattern = '([。！？]+)'
+        sentences = []
+        parts = [p.strip() for p in re.split(pattern, text) if p.strip()]
         
-        transition_markers = ['但是', '然而', '不过', '可是', '却', '反而', '相反']
-        for marker in transition_markers:
-            new_sentences = []
-            for sentence in sentences:
+        current = ""
+        for part in parts:
+            if re.match(pattern, part):
+                current += part
+                if current:
+                    sentences.append(current)
+                current = ""
+            else:
+                current = part
+                
+        if current:
+            sentences.append(current)
+            
+        # Handle emotional transitions without breaking context
+        transition_markers = ['但是', '然而', '不过', '可是', '却']
+        result = []
+        for sentence in sentences:
+            split_needed = False
+            for marker in transition_markers:
                 if marker in sentence:
                     parts = sentence.split(marker)
-                    new_sentences.extend([p.strip() for p in parts if p.strip()])
-                else:
-                    new_sentences.append(sentence)
-            sentences = new_sentences
-        return sentences
+                    if len(parts) == 2 and all(len(p.strip()) > 5 for p in parts):
+                        before, after = parts
+                        if before.strip():
+                            result.append(before.strip())
+                        if after.strip():
+                            result.append(marker + after.strip())
+                        split_needed = True
+                        break
+            if not split_needed:
+                result.append(sentence)
+                
+        return [s for s in result if len(s.strip()) > 5]
 
     async def segment_by_emotion(self, text: str) -> Dict[str, Any]:
         if not text:

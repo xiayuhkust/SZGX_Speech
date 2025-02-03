@@ -1,11 +1,33 @@
 from typing import Dict, Any
 import json
+import logging
 from openai import OpenAI
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 class EmotionAnalyzer:
     def __init__(self):
-        self.system_prompt = """
-你是一个专业的中文情感分析专家。你需要分析给定文本的情感强度，并给出0-5的评分。你需要特别注意中文语言的细微差别和修辞手法。评分标准如下：
+        self.system_prompt = """你是一个专业的中文情感分析专家。你需要分析给定文本的情感强度，并给出0-5的评分。
+
+你必须以严格的JSON格式返回。emotion字段必须从以下选择之一：喜悦、愤怒、悲伤、惊讶、忧虑、恐惧、期待、满意、焦虑。score必须是0-5的整数。explanation不超过50字。
+
+示例格式：
+{
+    "emotion": "喜悦",
+    "score": 4,
+    "explanation": "文本表达了强烈的喜悦之情"
+}
+
+注意事项：
+1. 不要返回"unknown"或列表外的情感
+2. score必须是整数，不能是小数
+3. 必须严格按照此JSON格式返回，不要添加注释或其他字段
+4. 如果文本包含多种情感，选择最主要或最后出现的情感
+
+评分标准如下：
 0: 完全中性或无情感
 1: 轻微情感波动
 2: 明显但温和的情感
@@ -43,7 +65,52 @@ class EmotionAnalyzer:
 - explanation: 简短解释（不超过50字）
 """
 
-    async def analyze(self, text: str) -> Dict[str, Any]:
+    async def _make_deepseek_call(self, text: str) -> Dict[str, Any]:
+        import os
+        import httpx
+        
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise ValueError("DEEPSEEK_API_KEY not set")
+            
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                "https://api.deepseek.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": "deepseek-chat",
+                    "messages": [
+                        {"role": "system", "content": self.system_prompt},
+                        {"role": "user", "content": text}
+                    ],
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0.3,
+                    "max_tokens": 150
+                }
+            )
+            
+            if response.status_code != 200:
+                raise Exception(f"DeepSeek API error: {response.text}")
+                
+            result = response.json()
+            if not result.get("choices") or not result["choices"][0].get("message", {}).get("content"):
+                raise Exception("Empty response from DeepSeek")
+                
+            content = result["choices"][0]["message"]["content"]
+            usage = result.get("usage", {})
+            
+            return {
+                "emotion": json.loads(content),
+                "usage": {
+                    "prompt_tokens": usage.get("prompt_tokens", 0),
+                    "completion_tokens": usage.get("completion_tokens", 0),
+                    "total_tokens": usage.get("total_tokens", 0),
+                    "model": "deepseek-chat",
+                    "cost_estimate": round((usage.get("total_tokens", 0) * 0.002) / 1000, 6)
+                }
+            }
+
+    async def analyze(self, text: str, retry_count: int = 0) -> Dict[str, Any]:
         try:
             from app.utils.token_utils import estimate_tokens, MAX_TOKENS, retry_with_timeout
             
@@ -53,14 +120,16 @@ class EmotionAnalyzer:
                 raise ValueError(f"Text too long ({estimated_tokens} tokens)")
                 
             async def _make_openai_call():
-                client = OpenAI()
+                client = OpenAI(timeout=30.0, max_retries=2)
                 response = client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[
                         {"role": "system", "content": self.system_prompt},
                         {"role": "user", "content": text}
                     ],
-                    response_format={"type": "json_object"}
+                    response_format={"type": "json_object"},
+                    temperature=0.3,
+                    max_tokens=150
                 )
                 if not response.choices or not response.choices[0].message.content:
                     raise Exception("Empty response from OpenAI")
@@ -70,8 +139,43 @@ class EmotionAnalyzer:
                 if not usage:
                     raise Exception("No usage information available")
                 
+                logging.info(f"Input text: {text[:200]}...")
+                logging.info(f"Raw OpenAI API Response: {response}")
+                
+                try:
+                    result = json.loads(content)
+                    logging.info(f"Parsed result: {result}")
+                    
+                    if not isinstance(result, dict):
+                        raise ValueError(f"Expected dict response, got {type(result)}")
+                        
+                    if "emotion" not in result or "score" not in result:
+                        raise ValueError(f"Missing required fields in response: {result}")
+                        
+                    if result.get("emotion") == "unknown":
+                        raise ValueError(f"Model returned unknown emotion: {result}")
+                        
+                    if result["emotion"] not in ["喜悦", "愤怒", "悲伤", "惊讶", "忧虑", "恐惧", "期待", "满意", "焦虑"]:
+                        raise ValueError(f"Invalid emotion type: {result['emotion']}")
+                        
+                    if not isinstance(result["score"], (int, float)) or not (0 <= float(result["score"]) <= 5):
+                        raise ValueError(f"Invalid emotion score: {result['score']}")
+                        
+                except json.JSONDecodeError as e:
+                    logging.error(f"Failed to parse JSON response: {e}")
+                    logging.error(f"Raw content: {content}")
+                    raise ValueError(f"Invalid JSON response from OpenAI API: {content}")
+                except ValueError as e:
+                    logging.error(str(e))
+                    raise
+                
+                emotion_data = {
+                    "emotion": result["emotion"],
+                    "score": float(result["score"])
+                }
+                
                 return {
-                    "result": json.loads(content),
+                    "emotion": emotion_data,
                     "usage": {
                         "prompt_tokens": usage.prompt_tokens,
                         "completion_tokens": usage.completion_tokens,
@@ -81,7 +185,21 @@ class EmotionAnalyzer:
                     }
                 }
             
-            result = await retry_with_timeout(_make_openai_call)
-            return result
+            try:
+                result = await retry_with_timeout(_make_openai_call)
+                return result
+            except Exception as e:
+                logging.error(f"OpenAI API error: {str(e)}")
+                if retry_count < 3:
+                    logging.info(f"Falling back to DeepSeek API (attempt {retry_count + 1})")
+                    try:
+                        return await self._make_deepseek_call(text)
+                    except Exception as e:
+                        logging.error(f"DeepSeek API error: {str(e)}")
+                        if retry_count < 2:
+                            logging.info(f"Retrying with OpenAI (attempt {retry_count + 2})")
+                            return await self.analyze(text, retry_count + 1)
+                        raise Exception(f"Both APIs failed after retries: {str(e)}")
+                raise
         except Exception as e:
             raise Exception(f"Error analyzing emotion: {str(e)}")
