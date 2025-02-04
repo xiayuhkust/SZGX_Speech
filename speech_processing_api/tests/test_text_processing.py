@@ -17,9 +17,13 @@ from tests.test_data import load_test_data
 
 @pytest.mark.asyncio
 async def test_text_processing():
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    
     processor = TextProcessor()
     test_data = load_test_data()
     test_text = test_data["mixed_emotions"][:3000]  # Use first 3000 characters
+    logging.info(f"Test text: {test_text}")
     
     result = await processor.process_text(test_text)
     
